@@ -145,26 +145,19 @@ function render() {
 
   const now = Date.now();
 
-  // build stop-based structure
-  const stopsMap = new Map();
+  const scored = [];
 
   state.stops.forEach(edge => {
     const stop = edge.node.place;
 
-    const dist = Math.sqrt(
-      Math.pow(state.lat - stop.lat, 2) +
-      Math.pow(state.lon - stop.lon, 2)
-    ) * 111000;
+    const dx = stop.lon - state.lon;
+    const dy = stop.lat - state.lat;
 
-    if (!stopsMap.has(stop.name)) {
-      stopsMap.set(stop.name, {
-        stop,
-        dist,
-        departures: []
-      });
-    }
+    // simple bearing approximation
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
-    const entry = stopsMap.get(stop.name);
+    const walkMinutes =
+      Math.sqrt(Math.pow(dx, 2) + Math.pow(dy, 2)) * 111000 / 80;
 
     stop.stoptimesWithoutPatterns.forEach(dep => {
 
@@ -174,85 +167,82 @@ function render() {
 
       const minutes = Math.round((departureMs - now) / 60000);
 
-      entry.departures.push({
+      const direction = dep.headsign.toLowerCase();
+
+      // 🧭 arrow logic (simple but effective)
+      let arrow = "→";
+
+      if (Math.abs(angle) < 45) arrow = "→";
+      else if (angle >= 45 && angle < 135) arrow = "↑";
+      else if (angle <= -45 && angle > -135) arrow = "↓";
+      else arrow = "←";
+
+      // 🚦 side of street hint (heuristic)
+      const side =
+        angle > 0 ? "walk RIGHT side" : "walk LEFT side";
+
+      scored.push({
+        stop: stop.name,
         line: dep.trip.route.shortName,
         direction: dep.headsign,
-        minutes
+        minutes,
+        walkMinutes,
+        arrow,
+        side
       });
     });
   });
 
-  // convert to array
-  let stops = Array.from(stopsMap.values());
-
-  // sort stops by nearest first (important UX decision)
-  stops.sort((a, b) => a.dist - b.dist);
+  // sort by best total time
+  scored.sort((a, b) =>
+    (a.minutes + a.walkMinutes) - (b.minutes + b.walkMinutes)
+  );
 
   let html = "";
 
-  stops.forEach(s => {
+  scored.slice(0, 25).forEach(d => {
 
-    // keep only best departures per line at this stop
-    const best = new Map();
+    let label = "";
+    let color = "";
 
-    s.departures.forEach(d => {
-      const key = d.line + "→" + d.direction;
-
-      if (!best.has(key) || best.get(key).minutes > d.minutes) {
-        best.set(key, d);
-      }
-    });
-
-    const list = Array.from(best.values())
-      .sort((a, b) => a.minutes - b.minutes)
-      .slice(0, 5);
-
-    if (list.length === 0) return;
-
-    const walk = Math.round(s.dist / 80);
+    if (d.minutes <= 0) {
+      label = "NOW";
+      color = "color:#ff4d4d;font-weight:700";
+    } else if (d.minutes <= 3) {
+      label = "SOON";
+      color = "color:#ffb020;font-weight:700";
+    } else {
+      label = `${d.minutes} min`;
+    }
 
     html += `
       <div class="stop" style="padding:14px 0;border-bottom:1px solid #333;">
-        <div style="margin-bottom:8px;">
-          <b>${s.stop.name}</b>
-          <div style="font-size:0.75rem;opacity:0.6">
-            ~${walk} min walk
-          </div>
-        </div>
-    `;
+        <div style="display:flex;justify-content:space-between;align-items:center;">
 
-    list.forEach(d => {
-
-      let label = "";
-      let color = "";
-
-      if (d.minutes <= 0) {
-        label = "NOW";
-        color = "color:#ff4d4d;font-weight:700";
-      } else if (d.minutes <= 3) {
-        label = "SOON";
-        color = "color:#ffb020;font-weight:700";
-      } else {
-        label = `${d.minutes} min`;
-      }
-
-      html += `
-        <div style="display:flex;justify-content:space-between;padding:2px 0;">
           <div>
-            <b>${d.line}</b> → ${d.direction}
+            <div>
+              <span style="font-size:1.2rem;margin-right:6px">${d.arrow}</span>
+              <b>${d.line}</b> → ${d.direction}
+            </div>
+
+            <div style="font-size:0.75rem;opacity:0.6">
+              ${d.stop} • ~${Math.round(d.walkMinutes)} min walk • ${d.side}
+            </div>
           </div>
+
           <div style="${color}">
             ${label}
           </div>
-        </div>
-      `;
-    });
 
-    html += `</div>`;
+        </div>
+      </div>
+    `;
   });
 
   container.innerHTML = html;
-  document.getElementById("status").innerText = "Choose your stop";
+
+  document.getElementById("status").innerText =
+    "Directional transit view";
 }</script>
 
 </body>
