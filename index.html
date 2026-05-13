@@ -91,24 +91,27 @@ async function loadNearbyStops() {
       nearest(
         lat: ${state.lat},
         lon: ${state.lon},
-        first: 5,
-        maxDistance: 600,
+        first: 10,
+        maxDistance: 1000,
         filterByPlaceTypes: STOP
       ) {
         edges {
           node {
             place {
               ... on Stop {
+                gtfsId
                 name
                 lat
                 lon
-                stoptimesWithoutPatterns(numberOfDepartures: 6) {
+                vehicleMode
+                stoptimesWithoutPatterns(numberOfDepartures: 3) {
                   serviceDay
                   realtimeDeparture
                   headsign
                   trip {
                     route {
                       shortName
+                      mode
                     }
                   }
                 }
@@ -133,48 +136,83 @@ async function loadNearbyStops() {
   render();
 }
 
-function distance(lat1, lon1, lat2, lon2) {
+
+// 📍 distance helper
+function meters(lat1, lon1, lat2, lon2) {
   return Math.sqrt(
-    Math.pow(lat1 - lat2, 2) + Math.pow(lon1 - lon2, 2)
-  ) * 111000; // rough meters
+    Math.pow(lat1 - lat2, 2) +
+    Math.pow(lon1 - lon2, 2)
+  ) * 111000;
 }
 
+
+// 🚇 MAIN RENDER
 function render() {
   const container = document.getElementById("results");
   container.innerHTML = "";
 
   const now = Date.now();
 
-  const CENTRE = [
-    "kamppi",
-    "rautatientori",
-    "elielinaukio"
-  ];
+  let stops = state.stops.map(edge => {
+    const s = edge.node.place;
 
-  const stopsMap = new Map();
+    const dist = meters(
+      state.lat, state.lon,
+      s.lat, s.lon
+    );
 
-  state.stops.forEach(edge => {
-    const stop = edge.node.place;
+    const walkMin = Math.round(dist / 80);
 
-    const stopId = stop.gtfsId || stop.name;
+    return {
+      id: s.gtfsId,
+      name: s.name,
+      lat: s.lat,
+      lon: s.lon,
+      mode: s.vehicleMode || "UNKNOWN",
+      dist,
+      walkMin,
+      departures: s.stoptimesWithoutPatterns
+    };
+  });
 
-    const walkMinutes =
-      Math.sqrt(
-        Math.pow(state.lat - stop.lat, 2) +
-        Math.pow(state.lon - stop.lon, 2)
-      ) * 111000 / 80;
+  // sort by nearest
+  stops.sort((a, b) => a.dist - b.dist);
 
-    if (!stopsMap.has(stopId)) {
-      stopsMap.set(stopId, {
-        stop,
-        walkMinutes,
-        departures: []
-      });
-    }
+  // take 5 nearest
+  stops = stops.slice(0, 5);
 
-    const entry = stopsMap.get(stopId);
+  let html = "";
 
-    stop.stoptimesWithoutPatterns.forEach(dep => {
+  stops.forEach(stop => {
+
+    // mode label
+    let icon = "🚏";
+    let label = stop.mode;
+
+    if (label.includes("TRAM")) icon = "🚋";
+    if (label.includes("BUS")) icon = "🚌";
+    if (label.includes("SUBWAY")) icon = "🚇";
+    if (label.includes("RAIL")) icon = "🚆";
+
+    html += `
+      <div style="padding:14px 0;border-bottom:1px solid #333;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          
+          <div>
+            <div style="font-size:1rem;font-weight:700;">
+              ${icon} ${stop.name}
+            </div>
+
+            <div style="font-size:0.8rem;opacity:0.6;">
+              ${Math.round(stop.dist)} m • ~${stop.walkMin} min walk
+            </div>
+          </div>
+
+        </div>
+    `;
+
+    // departures (max 3)
+    stop.departures.slice(0, 3).forEach(dep => {
 
       const departureMs =
         (dep.serviceDay * 1000) +
@@ -182,66 +220,23 @@ function render() {
 
       const minutes = Math.round((departureMs - now) / 60000);
 
-      const headsign = dep.headsign.toLowerCase();
-
-      const isCentre = CENTRE.some(c => headsign.includes(c));
-
-      entry.departures.push({
-        line: dep.trip.route.shortName,
-        direction: dep.headsign,
-        minutes,
-        isCentre
-      });
-    });
-  });
-
-  // sort stops by walking distance (primary UX)
-  const stops = Array.from(stopsMap.values())
-    .sort((a, b) => a.walkMinutes - b.walkMinutes);
-
-  let html = "";
-
-  stops.forEach(s => {
-
-    // sort departures: centre-bound first, then soonest
-    const departures = s.departures
-      .sort((a, b) => {
-        if (a.isCentre !== b.isCentre) return a.isCentre ? -1 : 1;
-        return a.minutes - b.minutes;
-      })
-      .slice(0, 5); // max 5 per stop
-
-    if (departures.length === 0) return;
-
-    html += `
-      <div class="stop" style="padding:14px 0;border-bottom:1px solid #333;">
-        <div style="margin-bottom:6px;">
-          <b>${s.stop.name}</b>
-          <div style="font-size:0.75rem;opacity:0.6">
-            ~${Math.round(s.walkMinutes)} min walk
-          </div>
-        </div>
-    `;
-
-    departures.forEach(d => {
-
       let label = "";
       let style = "";
 
-      if (d.minutes <= 0) {
+      if (minutes <= 0) {
         label = "NOW";
         style = "color:#ff4d4d;font-weight:700";
-      } else if (d.minutes <= 3) {
+      } else if (minutes <= 3) {
         label = "SOON";
         style = "color:#ffb020;font-weight:700";
       } else {
-        label = `${d.minutes} min`;
+        label = `${minutes} min`;
       }
 
       html += `
         <div style="display:flex;justify-content:space-between;padding:2px 0;">
           <div>
-            <b>${d.line}</b> → ${d.direction}
+            ${dep.trip.route.shortName} → ${dep.headsign}
           </div>
           <div style="${style}">
             ${label}
@@ -254,7 +249,9 @@ function render() {
   });
 
   container.innerHTML = html;
-  document.getElementById("status").innerText = "Clean stop view";
+
+  document.getElementById("status").innerText =
+    "5 nearest stops";
 }</script>
 
 </body>
