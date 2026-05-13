@@ -137,45 +137,51 @@ function render(edges) {
 
   const now = Date.now();
 
+  let allDepartures = [];
+
+  // 1. flatten everything into one list
   edges.forEach(edge => {
     const stop = edge.node.place;
 
-    const lines = {};
-
     stop.stoptimesWithoutPatterns.forEach(dep => {
-      const line = dep.trip.route.shortName;
+      const departureMs =
+        (dep.serviceDay * 1000) +
+        (dep.realtimeDeparture * 1000);
 
-      if (!lines[line]) lines[line] = [];
-      lines[line].push(dep);
-    });
+      const minutes = Math.round((departureMs - now) / 60000);
 
-    let html = `<div class="stop"><h2>${stop.name}</h2>`;
-
-    Object.entries(lines).forEach(([line, deps]) => {
-
-      deps.slice(0, 2).forEach(dep => {
-
-        const departureMs =
-          (dep.serviceDay * 1000) +
-          (dep.realtimeDeparture * 1000);
-
-        const minutes = Math.round((departureMs - now) / 60000);
-
-        html += `
-          <div style="display:flex;justify-content:space-between;padding:4px 0;">
-            <div><b>${line}</b> → ${dep.headsign}</div>
-            <div>${minutes <= 0 ? "Now" : minutes + " min"}</div>
-          </div>
-        `;
+      allDepartures.push({
+        stop: stop.name,
+        line: dep.trip.route.shortName,
+        headsign: dep.headsign,
+        minutes
       });
     });
-
-    html += `</div>`;
-
-    container.innerHTML += html;
   });
 
-  document.getElementById("status").innerText = "Live nearby departures";
+  // 2. sort by soonest departure
+  allDepartures.sort((a, b) => a.minutes - b.minutes);
+
+  // 3. render
+  let html = "";
+
+  allDepartures.slice(0, 25).forEach(d => {
+    html += `
+      <div class="stop">
+        <div style="display:flex;justify-content:space-between;">
+          <div>
+            <b>${d.line}</b> → ${d.headsign}
+            <div style="font-size:0.85em;opacity:0.8">${d.stop}</div>
+          </div>
+          <div><b>${d.minutes <= 0 ? "Now" : d.minutes + " min"}</b></div>
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+
+  document.getElementById("status").innerText = "Live (sorted)";
 }</script>
 
 </body>
