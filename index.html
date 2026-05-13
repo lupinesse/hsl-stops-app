@@ -18,28 +18,23 @@
     }
 
     body {
-      margin: 0;
-      font-family: system-ui;
-      background: var(--bg);
-      color: var(--text);
-      padding: 16px;
-    }
+  font-family: system-ui;
+  background: #0b0f14;
+  color: white;
+}
 
-    button {
-      width: 100%;
-      padding: 12px;
-      border: none;
-      border-radius: 12px;
-      background: var(--accent);
-      font-weight: bold;
-    }
+.stop {
+  padding: 12px 0;
+}
 
-    .stop {
-      background: var(--card);
-      margin-top: 16px;
-      padding: 12px;
-      border-radius: 12px;
-    }
+button {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  background: #00d2ff;
+  font-weight: 600;
+}
 
     .muted {
       color: var(--muted);
@@ -58,6 +53,12 @@
 
 <script>
 const API = "https://sweet-frost-f9aa.lupinesse.workers.dev";
+
+setInterval(() => {
+  if (typeof getLocation === "function") {
+    getLocation();
+  }
+}, 15000);
 
 function getLocation() {
   document.getElementById("status").innerText = "Getting location...";
@@ -137,7 +138,8 @@ function render(edges) {
 
   const now = Date.now();
 
-  let best = new Map();
+  // keep only the BEST (soonest) per line + direction
+  const best = new Map();
 
   edges.forEach(edge => {
     const stop = edge.node.place;
@@ -155,8 +157,9 @@ function render(edges) {
 
       const key = line + "→" + direction;
 
-      // keep ONLY the soonest per line + direction
-      if (!best.has(key) || best.get(key).minutes > minutes) {
+      const existing = best.get(key);
+
+      if (!existing || minutes < existing.minutes) {
         best.set(key, {
           stop: stop.name,
           line,
@@ -167,22 +170,43 @@ function render(edges) {
     });
   });
 
-  // convert map → array and sort by soonest departure
-  const sorted = Array.from(best.values())
-    .sort((a, b) => a.minutes - b.minutes)
-    .slice(0, 25);
+  // convert + sort by urgency
+  const list = Array.from(best.values())
+    .sort((a, b) => a.minutes - b.minutes);
 
+  // build UI
   let html = "";
 
-  sorted.forEach(d => {
+  list.slice(0, 20).forEach(d => {
+
+    let badge = "";
+    let color = "";
+
+    if (d.minutes <= 0) {
+      badge = "NOW";
+      color = "style='color:#ff4d4d;font-weight:700'";
+    } else if (d.minutes <= 3) {
+      badge = "SOON";
+      color = "style='color:#ffb020;font-weight:700'";
+    } else {
+      badge = `${d.minutes} min`;
+    }
+
     html += `
-      <div class="stop">
-        <div style="display:flex;justify-content:space-between;">
+      <div class="stop" style="padding:12px 0;border-bottom:1px solid #333;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
           <div>
-            <b>${d.line}</b> → ${d.direction}
-            <div style="font-size:0.85em;opacity:0.7">${d.stop}</div>
+            <div style="font-size:1rem;">
+              <b>${d.line}</b> → ${d.direction}
+            </div>
+            <div style="font-size:0.8rem;opacity:0.6">
+              ${d.stop}
+            </div>
           </div>
-          <div><b>${d.minutes <= 0 ? "Now" : d.minutes + " min"}</b></div>
+
+          <div ${color}>
+            ${badge}
+          </div>
         </div>
       </div>
     `;
@@ -190,7 +214,7 @@ function render(edges) {
 
   container.innerHTML = html;
 
-  document.getElementById("status").innerText = "Live (filtered directions)";
+  document.getElementById("status").innerText = "Live departures";
 }</script>
 
 </body>
