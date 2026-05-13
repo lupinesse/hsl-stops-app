@@ -135,6 +135,8 @@ function render(edges) {
   const container = document.getElementById("results");
   container.innerHTML = "";
 
+  const now = Date.now();
+
   edges.forEach(edge => {
     const stop = edge.node.place;
 
@@ -142,6 +144,7 @@ function render(edges) {
 
     stop.stoptimesWithoutPatterns.forEach(dep => {
       const line = dep.trip.route.shortName;
+
       if (!lines[line]) lines[line] = [];
       lines[line].push(dep);
     });
@@ -153,9 +156,10 @@ function render(edges) {
       deps.slice(0, 2).forEach(dep => {
 
         const departureMs =
-          (dep.serviceDay + dep.realtimeDeparture) * 1000;
+          (dep.serviceDay * 1000) +
+          (dep.realtimeDeparture * 1000);
 
-        const minutes = Math.round((departureMs - Date.now()) / 60000);
+        const minutes = Math.round((departureMs - now) / 60000);
 
         html += `
           <div style="display:flex;justify-content:space-between;padding:4px 0;">
