@@ -230,9 +230,9 @@ function render() {
     }
   });
 
-  // 📍 only 10 nearest stops
+  // 📍 only 5 nearest stops
   cleanedStops.sort((a, b) => a.dist - b.dist);
-  const finalStops = cleanedStops.slice(0, 10);
+  const finalStops = cleanedStops.slice(0, 5);
 
   let html = "";
 
