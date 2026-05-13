@@ -153,7 +153,9 @@ function render() {
 
   const now = Date.now();
 
-  let stops = state.stops.map(edge => {
+  const stopsMap = new Map();
+
+  state.stops.forEach(edge => {
     const s = edge.node.place;
 
     const dist = Math.sqrt(
@@ -163,55 +165,100 @@ function render() {
 
     const walkMin = Math.round(dist / 80);
 
-    return {
-      name: s.name,
-      lat: s.lat,
-      lon: s.lon,
-      dist,
-      walkMin,
-      departures: s.stoptimesWithoutPatterns || []
-    };
+    const stopId = s.gtfsId || s.name;
+
+    if (!stopsMap.has(stopId)) {
+      stopsMap.set(stopId, {
+        name: s.name,
+        dist,
+        walkMin,
+        departures: []
+      });
+    }
+
+    const entry = stopsMap.get(stopId);
+
+    (s.stoptimesWithoutPatterns || []).forEach(dep => {
+
+      const departureMs =
+        (dep.serviceDay * 1000) +
+        (dep.realtimeDeparture * 1000);
+
+      const minutes = Math.round((departureMs - now) / 60000);
+
+      entry.departures.push({
+        line: dep.trip.route.shortName,
+        direction: dep.headsign,
+        mode: dep.trip?.route?.mode || "UNKNOWN",
+        minutes,
+        dist
+      });
+    });
   });
 
-  // 📍 sort by nearest
+  let stops = Array.from(stopsMap.values());
+
+  // 📍 sort stops by distance first
   stops.sort((a, b) => a.dist - b.dist);
 
-  // 📍 take 10 nearest
-  stops = stops.slice(0, 10);
+  // 🧠 GLOBAL DEDUPE:
+  // keep ONLY closest stop per (line + direction)
+  const globalSeen = new Map();
+
+  const cleanedStops = [];
+
+  stops.forEach(stop => {
+
+    const filteredDeps = [];
+
+    stop.departures.forEach(d => {
+      const key = d.line + "→" + d.direction;
+
+      if (!globalSeen.has(key)) {
+        globalSeen.set(key, stop.dist);
+        filteredDeps.push(d);
+      }
+    });
+
+    if (filteredDeps.length > 0) {
+      cleanedStops.push({
+        ...stop,
+        departures: filteredDeps
+          .sort((a, b) => a.minutes - b.minutes)
+          .slice(0, 5)
+      });
+    }
+  });
+
+  // 📍 only 10 nearest stops
+  cleanedStops.sort((a, b) => a.dist - b.dist);
+  const finalStops = cleanedStops.slice(0, 10);
 
   let html = "";
 
-  stops.forEach(stop => {
+  finalStops.forEach(stop => {
+
+    // 🧠 ALWAYS SAFE emoji fallback
+    const modes = stop.departures.map(d => d.mode);
+
+    let emoji = "🚏";
+
+    if (modes.includes("TRAM")) emoji = "🚋";
+    else if (modes.includes("BUS")) emoji = "🚌";
+    else if (modes.includes("RAIL")) emoji = "🚆";
+    else if (modes.includes("SUBWAY")) emoji = "🚇";
 
     html += `
       <div style="padding:14px 0;border-bottom:1px solid #333;">
         <div style="margin-bottom:6px;">
-          <b>${stop.name}</b>
+          <b>${emoji} ${stop.name}</b>
           <div style="font-size:0.75rem;opacity:0.6;">
             ${Math.round(stop.dist)} m • ~${stop.walkMin} min walk
           </div>
         </div>
     `;
 
-    // ⏱ sort departures by soonest first
-    const deps = stop.departures
-      .map(dep => {
-        const departureMs =
-          (dep.serviceDay * 1000) +
-          (dep.realtimeDeparture * 1000);
-
-        const minutes = Math.round((departureMs - now) / 60000);
-
-        return {
-          line: dep.trip.route.shortName,
-          direction: dep.headsign,
-          minutes
-        };
-      })
-      .sort((a, b) => a.minutes - b.minutes)
-      .slice(0, 5); // ⏱ 5 departures per stop
-
-    deps.forEach(d => {
+    stop.departures.forEach(d => {
 
       let label = "";
       let style = "";
@@ -243,7 +290,7 @@ function render() {
 
   container.innerHTML = html;
   document.getElementById("status").innerText =
-    "10 nearest stops";
+    "Nearby stops";
 }</script>
 
 </body>
