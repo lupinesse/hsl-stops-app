@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nearby HSL Stops</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #00d2ff;
+      --border: #334155;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: 1.8rem;
+    }
+
+    p {
+      color: var(--muted);
+    }
+
+    button {
+      background: var(--accent);
+      color: black;
+      border: none;
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 16px;
+      width: 100%;
+      font-size: 1rem;
+    }
+
+    .status {
+      margin-bottom: 16px;
+      color: var(--muted);
+    }
+
+    .stop {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    }
+
+    .stop-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .stop-name {
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .distance {
+      color: var(--muted);
+      font-size: 0.9rem;
+      white-space: nowrap;
+    }
+
+    .departure {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .line {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 42px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: black;
+      font-weight: 700;
+      margin-right: 10px;
+    }
+
+    .destination {
+      flex: 1;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .time {
+      font-weight: 700;
+      font-size: 1rem;
+      margin-left: 10px;
+    }
+
+    .footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 24px;
+    }
+
+    .spinner {
+      width: 22px;
+      height: 22px;
+      border: 3px solid rgba(255,255,255,0.2);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="manifest" href="manifest.json" />
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js')
+          .catch(err => console.error('Service worker registration failed:', err));
+      });
+    }
+  </script>
+</head>
+<body>
+  <h1>Nearby HSL Stops</h1>
+  <p>Shows live tram and bus departures from stops closest to you.</p>
+
+  <button id="locateBtn">Find Nearby Stops</button>
+
+  <div class="status" id="status">
+    Waiting for location...
+  </div>
+
+  <div id="stops"></div>
+
+  <div class="footer">
+    Add this app to your Android home screen from Chrome → ⋮ → “Add to Home screen”.
+    <br /><br />
+    Data provided by HSL / Digitransit API
+  </div>
+
+  <script>
+    const API_URL = "https://api.digitransit.fi/routing/v1/routers/hsl/index/graphql";
+
+    const locateBtn = document.getElementById("locateBtn");
+    const statusEl = document.getElementById("status");
+    const stopsEl = document.getElementById("stops");
+
+    locateBtn.addEventListener("click", getLocationAndLoadStops);
+
+    async function getLocationAndLoadStops() {
+      stopsEl.innerHTML = "";
+      statusEl.innerHTML = '<span class="spinner"></span> Getting your location...';
+
+      if (!navigator.geolocation) {
+        statusEl.textContent = "Geolocation is not supported on this device.";
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+
+          statusEl.innerHTML = '<span class="spinner"></span> Loading nearby departures...';
+
+          try {
+            const stops = await fetchNearbyStops(lat, lon);
+
+            if (!stops.length) {
+              statusEl.textContent = "No nearby stops found.";
+              return;
+            }
+
+            renderStops(stops);
+            statusEl.textContent = `Showing ${stops.length} nearby stops.`;
+          } catch (err) {
+            console.error(err);
+            statusEl.textContent = "Failed to load data from HSL API.";
+          }
+        },
+        (error) => {
+          console.error(error);
+
+          switch (error.code) {
+            case error.PERMISSION_DENIED:
+              statusEl.textContent = "Location permission denied.";
+              break;
+            case error.POSITION_UNAVAILABLE:
+              statusEl.textContent = "Location unavailable.";
+              break;
+            case error.TIMEOUT:
+              statusEl.textContent = "Location request timed out.";
+              break;
+            default:
+              statusEl.textContent = "Unable to get your location.";
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 60000
+        }
+      );
+    }
+
+    async function fetchNearbyStops(lat, lon) {
+      const query = `
+        query NearbyStops($lat: Float!, $lon: Float!) {
+          nearest(lat: $lat, lon: $lon, maxDistance: 1000, filterByPlaceTypes: STOP, first: 5) {
+            edges {
+              node {
+                place {
+                  ... on Stop {
+                    gtfsId
+                    name
+                    code
+                    vehicleMode
+                    lat
+                    lon
+                    stoptimesWithoutPatterns(numberOfDepartures: 8, timeRange: 7200) {
+                      realtime
+                      realtimeDeparture
+                      serviceDay
+                      headsign
+                      trip {
+                        route {
+                          shortName
+                          mode
+                        }
+                      }
+                    }
+                  }
+                }
+                distance
+              }
+            }
+          }
+        }
+      `;
+
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          query,
+          variables: { lat, lon }
+        })
+      });
+
+      const json = await response.json();
+
+      return json.data.nearest.edges
+        .map(edge => ({
+          ...edge.node.place,
+          distance: Math.round(edge.node.distance)
+        }))
+        .filter(stop =>
+          stop.stoptimesWithoutPatterns.some(dep =>
+            dep.trip.route.mode === "BUS" || dep.trip.route.mode === "TRAM"
+          )
+        );
+    }
+
+    function renderStops(stops) {
+      stopsEl.innerHTML = "";
+
+      for (const stop of stops) {
+        const stopCard = document.createElement("div");
+        stopCard.className = "stop";
+
+        const departures = stop.stoptimesWithoutPatterns
+          .filter(dep => dep.trip.route.mode === "BUS" || dep.trip.route.mode === "TRAM")
+          .slice(0, 6)
+          .map(dep => {
+            const departureTime = formatDepartureTime(dep.serviceDay, dep.realtimeDeparture);
+
+            return `
+              <div class="departure">
+                <div style="display:flex; align-items:center; flex:1; min-width:0;">
+                  <span class="line">${dep.trip.route.shortName}</span>
+                  <span class="destination">${dep.headsign}</span>
+                </div>
+                <div class="time">${departureTime}</div>
+              </div>
+            `;
+          })
+          .join("");
+
+        stopCard.innerHTML = `
+          <div class="stop-header">
+            <div>
+              <div class="stop-name">${stop.name}</div>
+              <div class="distance">Stop ${stop.code}</div>
+            </div>
+            <div class="distance">${stop.distance} m</div>
+          </div>
+          ${departures}
+        `;
+
+        stopsEl.appendChild(stopCard);
+      }
+    }
+
+    function formatDepartureTime(serviceDay, realtimeDeparture) {
+      const departureDate = new Date((serviceDay + realtimeDeparture) * 1000);
+      const now = new Date();
+
+      const diffMinutes = Math.round((departureDate - now) / 60000);
+
+      if (diffMinutes <= 0) {
+        return "Now";
+      }
+
+      return `${diffMinutes} min`;
+    }
+
+    getLocationAndLoadStops();
+
+    setInterval(() => {
+      getLocationAndLoadStops();
+    }, 60000);
+  </script>
+</body>
+</html>
+
+<!--
+SAVE THESE AS SEPARATE FILES IN THE SAME FOLDER:
+
+========================
+manifest.json
+========================
+{
+  "name": "Nearby HSL Stops",
+  "short_name": "HSL Stops",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+
+========================
+service-worker.js
+========================
+const CACHE_NAME = 'hsl-stops-cache-v1';
+const urlsToCache = [
+  './',
+  './index.html'
+];
+
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(urlsToCache))
+  );
+});
+
+self.addEventListener('fetch', event => {
+  event.respondWith(
+    caches.match(event.request)
+      .then(response => response || fetch(event.request))
+  );
+});
+
+========================
+HOW TO DEPLOY TO GITHUB PAGES
+========================
+
+1. Create a new GitHub repository, for example:
+   hsl-stops-app
+
+2. Put these files in the repository root:
+   - index.html
+   - manifest.json
+   - service-worker.js
+   - icon-192.png
+   - icon-512.png
+
+3. Open terminal in the project folder.
+
+4. Run:
+
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git branch -M main
+   git remote add origin https://github.com/YOUR_USERNAME/hsl-stops-app.git
+   git push -u origin main
+
+5. Enable GitHub Pages:
+   - Open repository on GitHub
+   - Go to Settings → Pages
+   - Source → Deploy from branch
+   - Branch → main
+   - Folder → /root
+   - Save
+
+6. Your app will be available at:
+
+   https://YOUR_USERNAME.github.io/hsl-stops-app/
+
+7. Open the URL on Android Chrome.
+
+8. Install to home screen:
+   Chrome menu (⋮) → Add to Home screen
+
+9. The app now launches fullscreen like a native Android app.
+
+========================
+OPTIONAL: QUICK DEPLOY WITH GITHUB CLI
+========================
+
+If GitHub CLI is installed and authenticated:
+
+   gh repo create hsl-stops-app --public --source=. --remote=origin --push
+
+Then enable Pages:
+
+   gh api \
+     --method POST \
+     -H "Accept: application/vnd.github+json" \
+     /repos/YOUR_USERNAME/hsl-stops-app/pages \
+     -f source[branch]=main \
+     -f source[path]=/
+
+-->
