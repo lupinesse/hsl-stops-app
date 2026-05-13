@@ -156,22 +156,47 @@ function render() {
   let stops = state.stops.map(edge => {
     const s = edge.node.place;
 
-    const dist = meters(
-      state.lat, state.lon,
-      s.lat, s.lon
-    );
+    const dist = Math.sqrt(
+      Math.pow(state.lat - s.lat, 2) +
+      Math.pow(state.lon - s.lon, 2)
+    ) * 111000;
 
     const walkMin = Math.round(dist / 80);
 
+    // 🧠 determine dominant mode from departures
+    let modeCounts = {
+      BUS: 0,
+      TRAM: 0,
+      RAIL: 0,
+      SUBWAY: 0,
+      UNKNOWN: 0
+    };
+
+    (s.stoptimesWithoutPatterns || []).forEach(dep => {
+      const m = dep.trip?.route?.mode || "UNKNOWN";
+      if (modeCounts[m] !== undefined) modeCounts[m]++;
+      else modeCounts.UNKNOWN++;
+    });
+
+    let dominantMode = Object.keys(modeCounts).reduce((a, b) =>
+      modeCounts[a] > modeCounts[b] ? a : b
+    );
+
+    let emoji = "🚏";
+
+    if (dominantMode === "BUS") emoji = "🚌";
+    if (dominantMode === "TRAM") emoji = "🚋";
+    if (dominantMode === "RAIL") emoji = "🚆";
+    if (dominantMode === "SUBWAY") emoji = "🚇";
+
     return {
-      id: s.gtfsId,
       name: s.name,
+      emoji,
       lat: s.lat,
       lon: s.lon,
-      mode: s.vehicleMode || "UNKNOWN",
       dist,
       walkMin,
-      departures: s.stoptimesWithoutPatterns
+      departures: s.stoptimesWithoutPatterns || []
     };
   });
 
@@ -185,22 +210,13 @@ function render() {
 
   stops.forEach(stop => {
 
-    // mode label
-    let icon = "🚏";
-    let label = stop.mode;
-
-    if (label.includes("TRAM")) icon = "🚋";
-    if (label.includes("BUS")) icon = "🚌";
-    if (label.includes("SUBWAY")) icon = "🚇";
-    if (label.includes("RAIL")) icon = "🚆";
-
     html += `
       <div style="padding:14px 0;border-bottom:1px solid #333;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          
+
           <div>
             <div style="font-size:1rem;font-weight:700;">
-              ${icon} ${stop.name}
+              ${stop.emoji} ${stop.name}
             </div>
 
             <div style="font-size:0.8rem;opacity:0.6;">
@@ -211,7 +227,7 @@ function render() {
         </div>
     `;
 
-    // departures (max 3)
+    // show next 3 departures
     stop.departures.slice(0, 3).forEach(dep => {
 
       const departureMs =
@@ -251,7 +267,7 @@ function render() {
   container.innerHTML = html;
 
   document.getElementById("status").innerText =
-    "5 nearest stops";
+    "Nearby stops";
 }</script>
 
 </body>
