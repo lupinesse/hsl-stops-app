@@ -153,9 +153,7 @@ function render() {
 
   const now = Date.now();
 
-  const stopsMap = new Map();
-
-  state.stops.forEach(edge => {
+  let stops = state.stops.map(edge => {
     const s = edge.node.place;
 
     const dist = Math.sqrt(
@@ -165,100 +163,86 @@ function render() {
 
     const walkMin = Math.round(dist / 80);
 
-    const stopId = s.gtfsId || s.name;
-
-    if (!stopsMap.has(stopId)) {
-      stopsMap.set(stopId, {
-        name: s.name,
-        dist,
-        walkMin,
-        departures: []
-      });
-    }
-
-    const entry = stopsMap.get(stopId);
+    // 🧠 detect dominant mode safely from departures
+    const modeCount = {
+      BUS: 0,
+      TRAM: 0,
+      RAIL: 0,
+      SUBWAY: 0
+    };
 
     (s.stoptimesWithoutPatterns || []).forEach(dep => {
-
-      const departureMs =
-        (dep.serviceDay * 1000) +
-        (dep.realtimeDeparture * 1000);
-
-      const minutes = Math.round((departureMs - now) / 60000);
-
-      entry.departures.push({
-        line: dep.trip.route.shortName,
-        direction: dep.headsign,
-        mode: dep.trip?.route?.mode || "UNKNOWN",
-        minutes,
-        dist
-      });
-    });
-  });
-
-  let stops = Array.from(stopsMap.values());
-
-  // 📍 sort stops by distance first
-  stops.sort((a, b) => a.dist - b.dist);
-
-  // 🧠 GLOBAL DEDUPE:
-  // keep ONLY closest stop per (line + direction)
-  const globalSeen = new Map();
-
-  const cleanedStops = [];
-
-  stops.forEach(stop => {
-
-    const filteredDeps = [];
-
-    stop.departures.forEach(d => {
-      const key = d.line + "→" + d.direction;
-
-      if (!globalSeen.has(key)) {
-        globalSeen.set(key, stop.dist);
-        filteredDeps.push(d);
-      }
+      const m = dep.trip?.route?.mode;
+      if (modeCount[m] !== undefined) modeCount[m]++;
     });
 
-    if (filteredDeps.length > 0) {
-      cleanedStops.push({
-        ...stop,
-        departures: filteredDeps
-          .sort((a, b) => a.minutes - b.minutes)
-          .slice(0, 5)
-      });
+    let mode = "UNKNOWN";
+
+    if (modeCount.TRAM > modeCount.BUS &&
+        modeCount.TRAM > modeCount.RAIL &&
+        modeCount.TRAM > modeCount.SUBWAY) {
+      mode = "TRAM";
+    } else if (modeCount.BUS >= modeCount.TRAM &&
+               modeCount.BUS >= modeCount.RAIL) {
+      mode = "BUS";
+    } else if (modeCount.RAIL >= modeCount.BUS) {
+      mode = "RAIL";
+    } else if (modeCount.SUBWAY > 0) {
+      mode = "SUBWAY";
     }
-  });
-
-  // 📍 only 5 nearest stops
-  cleanedStops.sort((a, b) => a.dist - b.dist);
-  const finalStops = cleanedStops.slice(0, 5);
-
-  let html = "";
-
-  finalStops.forEach(stop => {
-
-    // 🧠 ALWAYS SAFE emoji fallback
-    const modes = stop.departures.map(d => d.mode);
 
     let emoji = "🚏";
 
-    if (modes.includes("TRAM")) emoji = "🚋";
-    else if (modes.includes("BUS")) emoji = "🚌";
-    else if (modes.includes("RAIL")) emoji = "🚆";
-    else if (modes.includes("SUBWAY")) emoji = "🚇";
+    if (mode === "BUS") emoji = "🚌";
+    else if (mode === "TRAM") emoji = "🚋";
+    else if (mode === "RAIL") emoji = "🚆";
+    else if (mode === "SUBWAY") emoji = "🚇";
+
+    return {
+      name: s.name,
+      emoji,
+      dist,
+      walkMin,
+      departures: s.stoptimesWithoutPatterns || []
+    };
+  });
+
+  // 📍 nearest first
+  stops.sort((a, b) => a.dist - b.dist);
+  stops = stops.slice(0, 5);
+
+  let html = "";
+
+  stops.forEach(stop => {
 
     html += `
       <div style="padding:14px 0;border-bottom:1px solid #333;">
         <div style="margin-bottom:6px;">
-          <b>${emoji} ${stop.name}</b>
+          <b>${stop.emoji} ${stop.name}</b>
           <div style="font-size:0.75rem;opacity:0.6;">
             ${Math.round(stop.dist)} m • ~${stop.walkMin} min walk
           </div>
         </div>
     `;
 
-    stop.departures.forEach(d => {
+    const deps = stop.departures
+      .map(dep => {
+        const departureMs =
+          (dep.serviceDay * 1000) +
+          (dep.realtimeDeparture * 1000);
+
+        const minutes = Math.round((departureMs - now) / 60000);
+
+        return {
+          line: dep.trip.route.shortName,
+          direction: dep.headsign,
+          minutes
+        };
+      })
+      .sort((a, b) => a.minutes - b.minutes)
+      .slice(0, 5);
+
+    deps.forEach(d => {
 
       let label = "";
       let style = "";
