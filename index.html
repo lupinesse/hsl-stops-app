@@ -54,43 +54,43 @@ button {
 <script>
 const API = "https://sweet-frost-f9aa.lupinesse.workers.dev";
 
-setInterval(() => {
-  if (typeof getLocation === "function") {
-    getLocation();
-  }
-}, 15000);
+const homeLat = 60.1896;
+const homeLon = 24.9542;
+
+let state = {
+  lat: null,
+  lon: null,
+  stops: [],
+  lastData: []
+};
 
 function getLocation() {
   document.getElementById("status").innerText = "Getting location...";
 
-  if (!navigator.geolocation) {
-    document.getElementById("status").innerText = "Geolocation not supported";
-    return;
-  }
-
   navigator.geolocation.getCurrentPosition(
-  (pos) => {
-    window.__lastLat = pos.coords.latitude;
-    window.__lastLon = pos.coords.longitude;
+    (pos) => {
+      state.lat = pos.coords.latitude;
+      state.lon = pos.coords.longitude;
 
-    loadNearbyStops(pos.coords.latitude, pos.coords.longitude);
-  },
+      loadNearbyStops();
+    },
     (err) => {
       document.getElementById("status").innerText =
         "Location error: " + err.message;
     },
-    { enableHighAccuracy: true, timeout: 10000 }
+    { enableHighAccuracy: true }
   );
 }
 
-async function loadNearbyStops(lat, lon) {
+async function loadNearbyStops() {
+
   document.getElementById("status").innerText = "Loading stops...";
 
   const query = `
     query {
       nearest(
-        lat: ${lat},
-        lon: ${lon},
+        lat: ${state.lat},
+        lon: ${state.lon},
         first: 5,
         maxDistance: 600,
         filterByPlaceTypes: STOP
@@ -100,6 +100,8 @@ async function loadNearbyStops(lat, lon) {
             place {
               ... on Stop {
                 name
+                lat
+                lon
                 stoptimesWithoutPatterns(numberOfDepartures: 6) {
                   serviceDay
                   realtimeDeparture
@@ -118,59 +120,44 @@ async function loadNearbyStops(lat, lon) {
     }
   `;
 
-  try {
-    const res = await fetch(API, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query })
-    });
+  const res = await fetch(API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query })
+  });
 
-    const data = await res.json();
+  const data = await res.json();
 
-    render(data.data.nearest.edges);
+  state.stops = data.data.nearest.edges;
 
-  } catch (e) {
-    document.getElementById("status").innerText =
-      "Failed to load data";
-  }
+  render();
 }
 
-function render(edges) {
+function distance(lat1, lon1, lat2, lon2) {
+  return Math.sqrt(
+    Math.pow(lat1 - lat2, 2) + Math.pow(lon1 - lon2, 2)
+  ) * 111000; // rough meters
+}
+
+function render() {
   const container = document.getElementById("results");
   container.innerHTML = "";
 
   const now = Date.now();
 
-  // 🏠 HOME LOCATION (Valhallankatu 18)
-  const homeLat = 60.1896;
-  const homeLon = 24.9542;
+  let items = [];
 
-  let best = new Map();
-
-  // determine if user is near home
-  let userLat, userLon;
-  let nearHome = false;
-
-  if (window.__lastLat && window.__lastLon) {
-    userLat = window.__lastLat;
-    userLon = window.__lastLon;
-
-    const dist = Math.sqrt(
-      Math.pow(userLat - homeLat, 2) +
-      Math.pow(userLon - homeLon, 2)
-    );
-
-    // ~0.004 ≈ ~400–500m
-    nearHome = dist < 0.004;
-  }
-
-  edges.forEach(edge => {
+  state.stops.forEach(edge => {
     const stop = edge.node.place;
 
-    stop.stoptimesWithoutPatterns.forEach(dep => {
+    const dist = distance(
+      state.lat,
+      state.lon,
+      stop.lat,
+      stop.lon
+    );
 
-      const line = dep.trip.route.shortName;
-      const direction = dep.headsign;
+    stop.stoptimesWithoutPatterns.forEach(dep => {
 
       const departureMs =
         (dep.serviceDay * 1000) +
@@ -178,66 +165,63 @@ function render(edges) {
 
       const minutes = Math.round((departureMs - now) / 60000);
 
-      const key = line + "→" + direction;
-
-      let score = minutes;
-
-      // 🧠 HOME BIAS LOGIC
-      if (nearHome) {
-        const d = direction.toLowerCase();
-
-        const isCentre =
-          d.includes("kamppi") ||
-          d.includes("rautatie") ||
-          d.includes("cent") ||
-          d.includes("city");
-
-        if (isCentre) score -= 5;
-      }
-
-      const existing = best.get(key);
-
-      if (!existing || score < existing.score) {
-        best.set(key, {
-          stop: stop.name,
-          line,
-          direction,
-          minutes,
-          score
-        });
-      }
+      items.push({
+        stop: stop.name,
+        line: dep.trip.route.shortName,
+        direction: dep.headsign,
+        minutes,
+        dist
+      });
     });
   });
 
-  const list = Array.from(best.values())
-    .sort((a, b) => a.score - b.score)
+  // 🧠 sort by urgency first
+  items.sort((a, b) => a.minutes - b.minutes);
+
+  // 🧠 keep best per line+direction
+  const best = new Map();
+
+  items.forEach(i => {
+    const key = i.line + "→" + i.direction;
+
+    if (!best.has(key) || best.get(key).minutes > i.minutes) {
+      best.set(key, i);
+    }
+  });
+
+  const finalList = Array.from(best.values())
+    .sort((a, b) => a.minutes - b.minutes)
     .slice(0, 20);
 
   let html = "";
 
-  list.forEach(d => {
+  finalList.forEach(d => {
 
     let label = "";
-    let style = "";
+    let color = "";
 
     if (d.minutes <= 0) {
       label = "NOW";
-      style = "color:#ff4d4d;font-weight:700";
+      color = "color:#ff4d4d;font-weight:700";
     } else if (d.minutes <= 3) {
       label = "SOON";
-      style = "color:#ffb020;font-weight:700";
+      color = "color:#ffb020;font-weight:700";
     } else {
       label = `${d.minutes} min`;
     }
 
+    const walk = Math.round(d.dist / 80); // ~80m per min walk
+
     html += `
       <div class="stop" style="padding:12px 0;border-bottom:1px solid #333;">
-        <div style="display:flex;justify-content:space-between;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
           <div>
-            <b>${d.line}</b> → ${d.direction}
-            <div style="font-size:0.8rem;opacity:0.6">${d.stop}</div>
+            <div><b>${d.line}</b> → ${d.direction}</div>
+            <div style="font-size:0.75rem;opacity:0.6">
+              ${d.stop} • ~${walk} min walk
+            </div>
           </div>
-          <div style="${style}">
+          <div style="${color}">
             ${label}
           </div>
         </div>
@@ -247,9 +231,15 @@ function render(edges) {
 
   container.innerHTML = html;
 
-  document.getElementById("status").innerText =
-    nearHome ? "Home view (centre priority)" : "Normal view";
-}</script>
+  document.getElementById("status").innerText = "Live transit view";
+}
+
+// 🔄 live refresh every 10 seconds
+setInterval(() => {
+  if (state.lat && state.lon) {
+    loadNearbyStops();
+  }
+}, 10000);</script>
 
 </body>
 </html>
