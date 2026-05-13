@@ -145,17 +145,26 @@ function render() {
 
   const now = Date.now();
 
-  let items = [];
+  // build stop-based structure
+  const stopsMap = new Map();
 
   state.stops.forEach(edge => {
     const stop = edge.node.place;
 
-    const dist = distance(
-      state.lat,
-      state.lon,
-      stop.lat,
-      stop.lon
-    );
+    const dist = Math.sqrt(
+      Math.pow(state.lat - stop.lat, 2) +
+      Math.pow(state.lon - stop.lon, 2)
+    ) * 111000;
+
+    if (!stopsMap.has(stop.name)) {
+      stopsMap.set(stop.name, {
+        stop,
+        dist,
+        departures: []
+      });
+    }
+
+    const entry = stopsMap.get(stop.name);
 
     stop.stoptimesWithoutPatterns.forEach(dep => {
 
@@ -165,81 +174,86 @@ function render() {
 
       const minutes = Math.round((departureMs - now) / 60000);
 
-      items.push({
-        stop: stop.name,
+      entry.departures.push({
         line: dep.trip.route.shortName,
         direction: dep.headsign,
-        minutes,
-        dist
+        minutes
       });
     });
   });
 
-  // 🧠 sort by urgency first
-  items.sort((a, b) => a.minutes - b.minutes);
+  // convert to array
+  let stops = Array.from(stopsMap.values());
 
-  // 🧠 keep best per line+direction
-  const best = new Map();
-
-  items.forEach(i => {
-    const key = i.line + "→" + i.direction;
-
-    if (!best.has(key) || best.get(key).minutes > i.minutes) {
-      best.set(key, i);
-    }
-  });
-
-  const finalList = Array.from(best.values())
-    .sort((a, b) => a.minutes - b.minutes)
-    .slice(0, 20);
+  // sort stops by nearest first (important UX decision)
+  stops.sort((a, b) => a.dist - b.dist);
 
   let html = "";
 
-  finalList.forEach(d => {
+  stops.forEach(s => {
 
-    let label = "";
-    let color = "";
+    // keep only best departures per line at this stop
+    const best = new Map();
 
-    if (d.minutes <= 0) {
-      label = "NOW";
-      color = "color:#ff4d4d;font-weight:700";
-    } else if (d.minutes <= 3) {
-      label = "SOON";
-      color = "color:#ffb020;font-weight:700";
-    } else {
-      label = `${d.minutes} min`;
-    }
+    s.departures.forEach(d => {
+      const key = d.line + "→" + d.direction;
 
-    const walk = Math.round(d.dist / 80); // ~80m per min walk
+      if (!best.has(key) || best.get(key).minutes > d.minutes) {
+        best.set(key, d);
+      }
+    });
+
+    const list = Array.from(best.values())
+      .sort((a, b) => a.minutes - b.minutes)
+      .slice(0, 5);
+
+    if (list.length === 0) return;
+
+    const walk = Math.round(s.dist / 80);
 
     html += `
-      <div class="stop" style="padding:12px 0;border-bottom:1px solid #333;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
+      <div class="stop" style="padding:14px 0;border-bottom:1px solid #333;">
+        <div style="margin-bottom:8px;">
+          <b>${s.stop.name}</b>
+          <div style="font-size:0.75rem;opacity:0.6">
+            ~${walk} min walk
+          </div>
+        </div>
+    `;
+
+    list.forEach(d => {
+
+      let label = "";
+      let color = "";
+
+      if (d.minutes <= 0) {
+        label = "NOW";
+        color = "color:#ff4d4d;font-weight:700";
+      } else if (d.minutes <= 3) {
+        label = "SOON";
+        color = "color:#ffb020;font-weight:700";
+      } else {
+        label = `${d.minutes} min`;
+      }
+
+      html += `
+        <div style="display:flex;justify-content:space-between;padding:2px 0;">
           <div>
-            <div><b>${d.line}</b> → ${d.direction}</div>
-            <div style="font-size:0.75rem;opacity:0.6">
-              ${d.stop} • ~${walk} min walk
-            </div>
+            <b>${d.line}</b> → ${d.direction}
           </div>
           <div style="${color}">
             ${label}
           </div>
         </div>
-      </div>
-    `;
+      `;
+    });
+
+    html += `</div>`;
   });
 
   container.innerHTML = html;
-
-  document.getElementById("status").innerText = "Live transit view";
-}
-
-// 🔄 live refresh every 10 seconds
-setInterval(() => {
-  if (state.lat && state.lon) {
-    loadNearbyStops();
-  }
-}, 10000);</script>
+  document.getElementById("status").innerText = "Choose your stop";
+}</script>
 
 </body>
 </html>
