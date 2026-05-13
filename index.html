@@ -60,37 +60,49 @@
 const API = "https://sweet-frost-f9aa.lupinesse.workers.dev";
 
 function getLocation() {
+  document.getElementById("status").innerText = "Getting location...";
+
   if (!navigator.geolocation) {
     document.getElementById("status").innerText = "Geolocation not supported";
     return;
   }
 
-  document.getElementById("status").innerText = "Requesting location...";
-
   navigator.geolocation.getCurrentPosition(
-    async (pos) => {
-      const lat = pos.coords.latitude;
-      const lon = pos.coords.longitude;
+    (pos) => {
+      loadNearbyStops(pos.coords.latitude, pos.coords.longitude);
+    },
+    (err) => {
+      document.getElementById("status").innerText =
+        "Location error: " + err.message;
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
 
-      document.getElementById("status").innerText = "Loading stops...";
+async function loadNearbyStops(lat, lon) {
+  document.getElementById("status").innerText = "Loading stops...";
 
-      const query = `
-        query {
-          nearest(lat: ${lat}, lon: ${lon}, first: 5, maxDistance: 800, filterByPlaceTypes: STOP) {
-            edges {
-              node {
-                place {
-                  ... on Stop {
-                    name
-                    stoptimesWithoutPatterns(numberOfDepartures: 5) {
-                      headsign
-                      realtimeDeparture
-                      serviceDay
-                      trip {
-                        route {
-                          shortName
-                        }
-                      }
+  const query = `
+    query {
+      nearest(
+        lat: ${lat},
+        lon: ${lon},
+        first: 5,
+        maxDistance: 600,
+        filterByPlaceTypes: STOP
+      ) {
+        edges {
+          node {
+            place {
+              ... on Stop {
+                name
+                stoptimesWithoutPatterns(numberOfDepartures: 6) {
+                  serviceDay
+                  realtimeDeparture
+                  headsign
+                  trip {
+                    route {
+                      shortName
                     }
                   }
                 }
@@ -98,42 +110,68 @@ function getLocation() {
             }
           }
         }
-      `;
-
-      const res = await fetch(API, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify({ query })
-});
-
-      const data = await res.json();
-
-      const stops = data.data.nearest.edges;
-
-      let html = "";
-
-      stops.forEach(s => {
-        const stop = s.node.place;
-
-        html += `<div class="stop"><b>${stop.name}</b><br/>`;
-
-        stop.stoptimesWithoutPatterns.slice(0, 3).forEach(dep => {
-          html += `${dep.trip.route.shortName} → ${dep.headsign}<br/>`;
-        });
-
-        html += `</div>`;
-      });
-
-      document.getElementById("results").innerHTML = html;
-      document.getElementById("status").innerText = "Done";
-    },
-    (err) => {
-      document.getElementById("status").innerText =
-        "Location error: " + err.message;
+      }
     }
-  );
+  `;
+
+  try {
+    const res = await fetch(API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query })
+    });
+
+    const data = await res.json();
+
+    render(data.data.nearest.edges);
+
+  } catch (e) {
+    document.getElementById("status").innerText =
+      "Failed to load data";
+  }
+}
+
+function render(edges) {
+  const container = document.getElementById("results");
+  container.innerHTML = "";
+
+  edges.forEach(edge => {
+    const stop = edge.node.place;
+
+    const lines = {};
+
+    stop.stoptimesWithoutPatterns.forEach(dep => {
+      const line = dep.trip.route.shortName;
+      if (!lines[line]) lines[line] = [];
+      lines[line].push(dep);
+    });
+
+    let html = `<div class="stop"><h2>${stop.name}</h2>`;
+
+    Object.entries(lines).forEach(([line, deps]) => {
+
+      deps.slice(0, 2).forEach(dep => {
+
+        const departureMs =
+          (dep.serviceDay + dep.realtimeDeparture) * 1000;
+
+        const minutes = Math.round((departureMs - Date.now()) / 60000);
+
+        html += `
+          <div style="display:flex;justify-content:space-between;padding:4px 0;">
+            <div><b>${line}</b> → ${dep.headsign}</div>
+            <div>${minutes <= 0 ? "Now" : minutes + " min"}</div>
+          </div>
+        `;
+      });
+    });
+
+    html += `</div>`;
+
+    container.innerHTML += html;
+  });
+
+  document.getElementById("status").innerText = "Live nearby departures";
 }</script>
 
 </body>
