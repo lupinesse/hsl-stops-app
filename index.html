@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 
 
@@ -285,3 +286,292 @@ copy everything from:
 until:
 
 </html>
+=======
+
+
+
+
+The app is now upgraded into a proper Android home screen web app (PWA).
+
+It now includes:
+
+Home screen installation support
+
+Fullscreen app mode
+
+Offline caching support
+
+Android manifest support
+
+Auto-refreshing live HSL departures
+
+GPS-based nearby stops
+
+The document also now includes:
+
+manifest.json
+
+service-worker.js
+
+Android installation instructions
+
+Required icon filenames
+
+Once hosted online, you can install it directly from Chrome to your Android home screen and use it almost like a native app.
+
+
+Upload the files to GitHub Pages. I have command line access set up.
+
+Hsl Nearby Stops Live Timetable App
+· html
+
+    .stop-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .stop-name {
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .distance {
+      color: var(--muted);
+      font-size: 0.9rem;
+      white-space: nowrap;
+    }
+
+    .departure {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .line {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 42px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: black;
+      font-weight: 700;
+      margin-right: 10px;
+    }
+
+    .destination {
+      flex: 1;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .time {
+      font-weight: 700;
+      font-size: 1rem;
+      margin-left: 10px;
+    }
+
+    .footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 24px;
+    }
+
+    .spinner {
+      width: 22px;
+      height: 22px;
+      border: 3px solid rgba(255,255,255,0.2);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="manifest" href="manifest.json" />
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js')
+          .catch(err => console.error('Service worker registration failed:', err));
+      });
+    }
+  </script>
+</head>
+<body>
+  <h1>Nearby HSL Stops</h1>
+  <p>Shows live tram and bus departures from stops closest to you.</p>
+
+  <button id="locateBtn">Find Nearby Stops</button>
+
+  <div class="status" id="status">
+    Waiting for location...
+  </div>
+
+  <div id="stops"></div>
+
+  <div class="footer">
+    Add this app to your Android home screen from Chrome → ⋮ → “Add to Home screen”.
+    <br /><br />
+    Data provided by HSL / Digitransit API
+  </div>
+
+  <script>
+    const API_URL = "https://api.digitransit.fi/routing/v1/routers/hsl/index/graphql";
+
+    const locateBtn = document.getElementById("locateBtn");
+    const statusEl = document.getElementById("status");
+    const stopsEl = document.getElementById("stops");
+I added full GitHub Pages deployment instructions and ready-to-run terminal commands, including:
+
+Standard git deployment flow
+
+GitHub Pages setup
+
+Optional GitHub CLI (gh) one-command deployment
+
+Android installation steps
+
+You can now:
+
+Save the files locally
+
+Run the provided commands
+
+Open the GitHub Pages URL on your phone
+
+Add it to your Android home screen as an app
+
+
+That usually happens because Android blocks GPS access for local file:// apps.
+
+Geolocation APIs only work reliably when the app is served over:
+
+https://
+
+or http://localhost
+
+GitHub Pages fixes this automatically because it uses HTTPS.
+
+So instead of opening the HTML file directly from your Downloads folder:
+
+Upload it to GitHub Pages
+
+Open the GitHub Pages URL in Chrome
+
+Accept the location permission popup
+
+Then use:
+Chrome → ⋮ → “Add to Home screen”
+
+Also check Android permissions:
+
+Android Settings → Apps → Chrome → Permissions → Location
+
+Set to:
+
+“Allow while using app”
+
+and enable “Precise location”
+
+If it still fails:
+
+tap the lock icon in Chrome address bar
+
+Site settings
+
+Location → Allow
+
+The app should then work normally.
+
+
+How can I download these: index.html
+   - manifest.json
+   - service-worker.js
+   - icon-192.png
+   - icon-512.png
+
+The canvas currently contains everything embedded into one document, so you need to split them into separate files manually.
+
+Create these files:
+
+index.html
+
+manifest.json
+
+service-worker.js
+
+The contents for manifest.json and service-worker.js are already included at the bottom of the HTML document inside the big comment block.
+
+For the icons:
+
+Option 1 — Fastest
+Use any PNG image and rename copies to:
+
+icon-192.png
+
+icon-512.png
+
+You can even use the HSL logo or a tram icon.
+
+Option 2 — Generate proper icons
+You can use:
+
+PWA Asset Generator
+
+Favicon Generator
+
+Upload one square image and download the generated PNGs.
+
+Folder structure
+Your project should look like:
+
+hsl-stops-app/
+├── index.html
+├── manifest.json
+├── service-worker.js
+├── icon-192.png
+└── icon-512.png
+Then run the git commands from that folder and deploy to GitHub Pages.
+
+
+I don't understand. Tell me step by step instructions how to get it working on my phone.
+
+1. Create a folder on your computer
+Create a folder called:
+
+hsl-stops-app
+2. Create the files
+Inside that folder, create these 3 files:
+
+index.html
+manifest.json
+service-worker.js
+3. Copy the code into the files
+File 1: index.html
+Open the big HTML document from the canvas and:
+
+copy everything from:
+
+<!DOCTYPE html>
+until:
+
+</html>
+>>>>>>> c2aecaeeb48769cc4e71a8f3851594afd61a9e6a

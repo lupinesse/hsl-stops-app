@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 {
   "name": "Nearby HSL Stops",
   "short_name": "HSL Stops",
@@ -18,4 +19,26 @@
       "type": "image/png"
     }
   ]
+=======
+{
+  "name": "Nearby HSL Stops",
+  "short_name": "HSL Stops",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+>>>>>>> c2aecaeeb48769cc4e71a8f3851594afd61a9e6a
 }
