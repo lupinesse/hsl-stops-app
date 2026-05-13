@@ -59,33 +59,37 @@
 <script>
 const API = "https://api.digitransit.fi/routing/v1/routers/hsl/index/graphql";
 
-async function getLocation() {
+function getLocation() {
   if (!navigator.geolocation) {
-    alert("No geolocation support");
+    document.getElementById("status").innerText = "Geolocation not supported";
     return;
   }
 
-  navigator.geolocation.getCurrentPosition(async (pos) => {
-    const lat = pos.coords.latitude;
-    const lon = pos.coords.longitude;
+  document.getElementById("status").innerText = "Requesting location...";
 
-    document.getElementById("status").innerText = "Loading...";
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
 
-    const query = `
-      query {
-        nearest(lat: ${lat}, lon: ${lon}, first: 5, maxDistance: 800, filterByPlaceTypes: STOP) {
-          edges {
-            node {
-              place {
-                ... on Stop {
-                  name
-                  stoptimesWithoutPatterns(numberOfDepartures: 5) {
-                    headsign
-                    realtimeDeparture
-                    serviceDay
-                    trip {
-                      route {
-                        shortName
+      document.getElementById("status").innerText = "Loading stops...";
+
+      const query = `
+        query {
+          nearest(lat: ${lat}, lon: ${lon}, first: 5, maxDistance: 800, filterByPlaceTypes: STOP) {
+            edges {
+              node {
+                place {
+                  ... on Stop {
+                    name
+                    stoptimesWithoutPatterns(numberOfDepartures: 5) {
+                      headsign
+                      realtimeDeparture
+                      serviceDay
+                      trip {
+                        route {
+                          shortName
+                        }
                       }
                     }
                   }
@@ -94,38 +98,41 @@ async function getLocation() {
             }
           }
         }
-      }
-    `;
+      `;
 
-    const res = await fetch(API, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query })
-    });
-
-    const data = await res.json();
-
-    const stops = data.data.nearest.edges;
-
-    let html = "";
-
-    stops.forEach(s => {
-      const stop = s.node.place;
-
-      html += `<div class="stop"><b>${stop.name}</b><br/>`;
-
-      stop.stoptimesWithoutPatterns.slice(0,3).forEach(dep => {
-        html += `${dep.trip.route.shortName} → ${dep.headsign}<br/>`;
+      const res = await fetch(API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query })
       });
 
-      html += `</div>`;
-    });
+      const data = await res.json();
 
-    document.getElementById("results").innerHTML = html;
-    document.getElementById("status").innerText = "Done";
-  });
-}
-</script>
+      const stops = data.data.nearest.edges;
+
+      let html = "";
+
+      stops.forEach(s => {
+        const stop = s.node.place;
+
+        html += `<div class="stop"><b>${stop.name}</b><br/>`;
+
+        stop.stoptimesWithoutPatterns.slice(0, 3).forEach(dep => {
+          html += `${dep.trip.route.shortName} → ${dep.headsign}<br/>`;
+        });
+
+        html += `</div>`;
+      });
+
+      document.getElementById("results").innerHTML = html;
+      document.getElementById("status").innerText = "Done";
+    },
+    (err) => {
+      document.getElementById("status").innerText =
+        "Location error: " + err.message;
+    }
+  );
+}</script>
 
 </body>
 </html>
