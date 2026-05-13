@@ -57,7 +57,7 @@
   <div id="results"></div>
 
 <script>
-const API = "https://api.digitransit.fi/routing/v1/routers/hsl/index/graphql";
+const API = "https://sweet-frost-f9aa.lupinesse.workers.dev";
 
 function getLocation() {
   if (!navigator.geolocation) {
@@ -101,10 +101,12 @@ function getLocation() {
       `;
 
       const res = await fetch(API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query })
-      });
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({ query })
+});
 
       const data = await res.json();
 
